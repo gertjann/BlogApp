@@ -1,9 +1,9 @@
 ﻿using BlogApp.Data;
 using BlogApp.DTO;
+using BlogApp.Interfaces;
 using BlogApp.Models;
 using BlogApp.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -16,13 +16,18 @@ namespace BlogApp.Controllers
     {
         private readonly BlogDbContext _context;
         private readonly ITokenService _tokenService;
+        private readonly IValidationService _validationService;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(BlogDbContext context, ITokenService tokenService)
+        public AuthController(BlogDbContext context, ITokenService tokenService, IValidationService validationService, ILogger<AuthController> logger)
         {
             _context = context;
             _tokenService = tokenService;
+            _validationService = validationService;
+            _logger = logger;
         }
-        //  list all users
+
+        // List all users
         [HttpGet("list")]
         public IActionResult GetUsers()
         {
@@ -39,93 +44,128 @@ namespace BlogApp.Controllers
 
                 if (users == null || !users.Any())
                 {
+                    _logger.LogWarning("No users found in the database.");
                     return NotFound("No users found.");
                 }
-
+                _logger.LogInformation("Successfully retrieved the list of users.");
                 return Ok(users);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Internal server error: {ex.Message}");
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                return StatusCode(500, new { Message = "An error occurred while retrieving users.", Error = ex.Message });
             }
         }
-
 
         // User registration
         [HttpPost("register")]
         public IActionResult Register([FromBody] UserRegisterDto registerDto)
         {
-            if (registerDto == null || string.IsNullOrEmpty(registerDto.Username))
+            try
             {
-                return BadRequest("Data is invalid");
+                if (registerDto == null || string.IsNullOrEmpty(registerDto.Username))
+                {
+                    _logger.LogWarning("Received invalid data during user registration.");
+                    return BadRequest("Data is invalid.");
+                }
+
+                // Check if user already exists
+                var existingUser = _context.Users.FirstOrDefault(u => u.Username == registerDto.Username);
+                if (existingUser != null)
+                {
+                    _logger.LogWarning("Username already exists: {Username}", registerDto.Username);
+                    return BadRequest("Username already exists.");
+                }
+
+                // Create user
+                var user = new User
+                {
+                    Username = registerDto.Username,
+                    Password = registerDto.Password,
+                    PasswordHash = HashPassword(registerDto.Password)
+                };
+
+                _context.Users.Add(user);
+                _context.SaveChanges();
+
+                _logger.LogInformation("User registered successfully: {Username}", registerDto.Username);
+                return Ok(new { Message = "User registered successfully!" });
             }
-
-            // Kontrollojm nëse përdoruesi ekziston
-            var existingUser = _context.Users.FirstOrDefault(u => u.Username == registerDto.Username);
-            if (existingUser != null)
+            catch (Exception ex)
             {
-                return BadRequest("Username already exists");
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                return StatusCode(500, new { Message = "An error occurred during user registration.", Error = ex.Message });
             }
-
-            // Krijo përdoruesin
-            var user = new User
-            {
-                Username = registerDto.Username,
-                Password = registerDto.Password, 
-                PasswordHash = HashPassword(registerDto.Password) 
-            };
-
-            _context.Users.Add(user);
-            _context.SaveChanges();
-
-            return Ok(new { Message = "User registered successfully!" });
         }
 
         // Login and token creation
         [HttpPost("login")]
         public IActionResult Login([FromBody] UserLoginDto loginDto)
         {
-
-            if (loginDto == null || string.IsNullOrEmpty(loginDto.Username) || string.IsNullOrEmpty(loginDto.Password))
+            try
             {
-                return BadRequest("Username or Password cannot be empty");
+                if (loginDto == null || string.IsNullOrEmpty(loginDto.Username) || string.IsNullOrEmpty(loginDto.Password))
+                {
+                    _logger.LogWarning("Login attempt with invalid credentials.");
+                    return BadRequest("Username or Password cannot be empty.");
+                }
+
+                var user = _context.Users
+                    .Where(u => u.Username.ToLower().Trim() == loginDto.Username.ToLower().Trim())
+                    .FirstOrDefault();
+
+                // Check if user exists and verify password
+                if (user == null || string.IsNullOrEmpty(user.PasswordHash) || !VerifyPassword(loginDto.Password, user.PasswordHash))
+                {
+                    _logger.LogWarning("Failed login attempt for user: {Username}", loginDto.Username);
+                    return Unauthorized("Invalid credentials.");
+                }
+
+                // Generate JWT token
+                var token = _tokenService.GenerateToken(user.Id, user.Username ?? string.Empty);
+                _logger.LogInformation("User logged in successfully: {Username}", loginDto.Username);
+
+
+                return Ok(new { Token = token });
             }
-
-
-            var user = _context.Users
-               .Where(u => u.Username.ToLower().Trim() == loginDto.Username.ToLower().Trim())
-               .FirstOrDefault();
-
-            // kontrolle per userin ose passwhash 
-            if (user == null || string.IsNullOrEmpty(user.PasswordHash) || !VerifyPassword(loginDto.Password, user.PasswordHash))
+            catch (Exception ex)
             {
-                return Unauthorized("Invalid credentials");
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                return StatusCode(500, new { Message = "An error occurred during login.", Error = ex.Message });
             }
-
-            // Gjenerimi i JWT token
-            var token = _tokenService.GenerateToken(user.Id, user.Username ?? string.Empty);
-
-            return Ok(new { Token = token });
         }
 
-
-        // Funx ofpasswhashing
+        // Function for password hashing
         private string HashPassword(string password)
         {
-            using (var sha256 = SHA256.Create())
+            try
             {
-                var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-                return Convert.ToBase64String(hashedBytes);
+                using (var sha256 = SHA256.Create())
+                {
+                    var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+                    return Convert.ToBase64String(hashedBytes);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                throw new Exception("An error occurred while hashing the password.", ex);
             }
         }
 
-
-
-        // Funx of passveryfing
+        // Function for password verification
         private bool VerifyPassword(string password, string storedHash)
         {
-            var hashedPassword = HashPassword(password);
-            return hashedPassword == storedHash;
+            try
+            {
+                var hashedPassword = HashPassword(password);
+                return hashedPassword == storedHash;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                throw new Exception("An error occurred while verifying the password.", ex);
+            }
         }
     }
 }

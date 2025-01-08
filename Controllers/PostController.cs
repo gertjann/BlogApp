@@ -15,150 +15,199 @@ namespace BlogApp.Controllers
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly ITokenService _tokenService;
+        private readonly ILogger<PostController> _logger;
 
-        public PostController(IUnitOfWork unitOfWork, ITokenService tokenService)
+
+        public PostController(IUnitOfWork unitOfWork, ITokenService tokenService, ILogger<PostController> logger)
         {
             _unitOfWork = unitOfWork;
             _tokenService = tokenService;
+            _logger = logger;
         }
 
         // Endpoint për krijimin e postimit
-        [Authorize(AuthenticationSchemes = "Bearer")]  // Vetëm përdoruesit e autentikuar mund të krijojnë postime
+        [Authorize(AuthenticationSchemes = "Bearer")]
         [HttpPost]
         public async Task<IActionResult> CreatePost([FromBody] PostCreateDto postDto)
         {
-            // Meerr tokenin nga headeri Authorization
-            var token = Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
-
-            // marrim user id nga funx
-            var userId = _tokenService.GetUserIdFromToken(token);
-            // Merr ID-në e përdoruesit nga tokeni
-            if (userId == 0)
+            try
             {
-                return Unauthorized(new { Message = "Token is invalid or does not contain a valid 'userId'." });
+                var token = Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+                var userId = _tokenService.GetUserIdFromToken(token);
+
+                if (userId == 0)
+                {
+                    _logger.LogWarning("Invalid token.");
+                    return Unauthorized(new { Message = "Token is invalid or does not contain a valid 'userId'." });
+                }
+
+                var categories = await _unitOfWork.Categories.GetAllAsync();
+
+                if (categories == null || !categories.Any())
+                {
+                    _logger.LogWarning("No categories found.");
+                    return BadRequest("Invalid category IDs.");
+                }
+
+                var postCategories = categories.Where(c => postDto.CategoryIds.Contains(c.Id))
+                                               .Select(c => new PostCategory { CategoryId = c.Id })
+                                               .ToList();
+
+                var post = new Post
+                {
+                    Title = postDto.Title,
+                    Content = postDto.Content,
+                    Status = postDto.Status,
+                    CreatedDate = DateTime.Now,
+                    UserId = userId,
+                    PostCategories = postCategories
+                };
+
+                var createdPost = await _unitOfWork.Posts.CreateAsync(post);
+                await _unitOfWork.CommitAsync();
+
+                _logger.LogInformation($"Post with title {postDto.Title} created successfully.");
+                return CreatedAtAction(nameof(GetPostById), new { id = createdPost.Id }, createdPost);
             }
-
-            // find categories
-            var categories = await _unitOfWork.Categories.GetAllAsync();
-
-            if (categories == null || !categories.Any())
+            catch (Exception ex)
             {
-                return BadRequest("Invalid category IDs.");
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                return StatusCode(500, $"Internal server error: {ex.Message}");
             }
-            var postCategories = categories.Where(c => postDto.CategoryIds.Contains(c.Id))
-                                    .Select(c => new PostCategory { CategoryId = c.Id })
-                                    .ToList();
-
-            // create post
-            var post = new Post
-            {
-                Title = postDto.Title,
-                Content = postDto.Content,
-                Status = postDto.Status,
-                CreatedDate = DateTime.Now,
-                UserId = userId,
-                PostCategories = postCategories 
-            };
-
-            var createdPost = await _unitOfWork.Posts.CreateAsync(post);
-            await _unitOfWork.CommitAsync();
-
-            return CreatedAtAction(nameof(GetPostById), new { id = createdPost.Id }, createdPost);
         }
 
         // Endpoint për marrjen e postimit me ID
         [HttpGet("{id}")]
         public async Task<IActionResult> GetPostById(int id)
         {
-            var post = await _unitOfWork.Posts.GetByIdAsync(id);
-            if (post == null)
+            try
             {
-                return NotFound();
+                var post = await _unitOfWork.Posts.GetByIdAsync(id);
+                if (post == null)
+                {
+                    _logger.LogWarning($"Post with ID {id} not found.");
+                    return NotFound();
+                }
+
+                return Ok(post);
             }
-            return Ok(post);
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
         }
 
-        // List all posts 
+        // List all posts
         [HttpGet]
         public async Task<IActionResult> GetAllPosts()
         {
-            var posts = await _unitOfWork.Posts.GetAllAsync();
-            return Ok(posts);
+            try
+            {
+                var posts = await _unitOfWork.Posts.GetAllAsync();
+                return Ok(posts);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
         }
 
-        // Endpoint për filtrimin e  postimeve
+        // Endpoint për filtrimin e postimeve
         [HttpGet("filter")]
         public async Task<IActionResult> FilterPosts([FromQuery] string? title, [FromQuery] DateTime? startDate)
         {
-            var posts = await _unitOfWork.Posts.FilterPostsAsync(title, startDate);
-
-            if (posts == null || !posts.Any())
+            try
             {
-                return NotFound("No posts found with the given criteria.");
-            }
+                var posts = await _unitOfWork.Posts.FilterPostsAsync(title, startDate);
 
-            return Ok(posts);
+                if (posts == null || !posts.Any())
+                {
+                    _logger.LogWarning("No posts found with the given criteria.");
+                    return NotFound("No posts found with the given criteria.");
+                }
+
+                return Ok(posts);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
         }
 
         // Endpoint për përditësimin e postimit
-        [Authorize(AuthenticationSchemes = "Bearer")]  // Vetëm përdoruesit e autentikuar mund të krijojnë postime
+        [Authorize(AuthenticationSchemes = "Bearer")]
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdatePost(int id, [FromBody] PostUpdateDto postDto)
         {
-            var post = await _unitOfWork.Posts.GetByIdAsync(id);
-
-            if (post == null)
+            try
             {
-                return NotFound();
+                var post = await _unitOfWork.Posts.GetByIdAsync(id);
+
+                if (post == null)
+                {
+                    return NotFound();
+                }
+
+                var token = Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+                var userId = _tokenService.GetUserIdFromToken(token);
+
+                if (post.UserId != userId)
+                {
+                    _logger.LogWarning($"User {userId} tried to update a post not owned by them.");
+                    return Forbid("You can only edit your own posts.");
+                }
+
+                post.Title = postDto.Title;
+                post.Content = postDto.Content;
+                post.Status = postDto.Status;
+
+                await _unitOfWork.CommitAsync();
+
+                return NoContent();
             }
-
-            // Merr ID-në e përdoruesit nga tokeni
-            var token = Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
-            var userId = _tokenService.GetUserIdFromToken(token);
-
-            // Kontrollojm nqs përdoruesi është ai që e ka krijuar postimin
-            if (post.UserId != userId)
+            catch (Exception ex)
             {
-                return Forbid("You can only edit your own posts.");
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                return StatusCode(500, $"Internal server error: {ex.Message}");
             }
-
-            //Nqs po,e updatojme 
-            post.Title = postDto.Title;
-            post.Content = postDto.Content;
-            post.Status = postDto.Status;
-
-            // ruajme ndryshimet 
-            await _unitOfWork.CommitAsync();
-
-            return NoContent();
         }
+
+        // Endpoint për fshirjen e postimit
+        [Authorize(AuthenticationSchemes = "Bearer")]
         [HttpDelete("{id}")]
-        [Authorize(AuthenticationSchemes = "Bearer")]  // Vetëm përdoruesit e autentikuar mund të krijojnë postime
         public async Task<IActionResult> DeletePost(int id)
         {
-            var post = await _unitOfWork.Posts.GetByIdAsync(id);
-
-            if (post == null)
+            try
             {
-                return NotFound();
+                var post = await _unitOfWork.Posts.GetByIdAsync(id);
+
+                if (post == null)
+                {
+                    return NotFound();
+                }
+
+                var token = Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+                var userId = _tokenService.GetUserIdFromToken(token);
+
+                if (post.UserId != userId)
+                {
+                    _logger.LogWarning($"User {userId} tried to delete a post not owned by them.");
+                    return Forbid("You can only delete your own posts.");
+                }
+
+                await _unitOfWork.Posts.Delete(post);
+                await _unitOfWork.CommitAsync();
+
+                return NoContent();
             }
-            // Marrim id e userit nga tokeni 
-            var token = Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
-            var userId = _tokenService.GetUserIdFromToken(token);
-
-
-            // Kontrollo nëse përdoruesi është ai që e ka krijuar postimin
-            if (post.UserId != userId)
+            catch (Exception ex)
             {
-                return Forbid("You can only delete your own posts.");
+                _logger.LogError(ex, "An error occurred while processing the request.");
+                return StatusCode(500, $"Internal server error: {ex.Message}");
             }
-
-            // Nqs po,fshijme  postimin
-            await _unitOfWork.Posts.Delete(post);
-
-            return NoContent();
         }
-
     }
 }
-
