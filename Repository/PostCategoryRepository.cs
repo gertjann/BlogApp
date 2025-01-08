@@ -2,8 +2,8 @@
 using BlogApp.Interfaces;
 using BlogApp.Models;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Linq.Expressions;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace BlogApp.Repositories
@@ -17,10 +17,68 @@ namespace BlogApp.Repositories
             _context = context;
         }
 
-        // Implementimi i metodës për të kontrolluar nëse ekziston një lidhje post-kategori
-        public async Task<bool> AnyAsync(Expression<Func<PostCategory, bool>> predicate)
+        // Krijo një lidhje të re midis postit dhe kategorisë
+        public async Task<PostCategory> CreateAsync(PostCategory postCategory)
         {
-            return await _context.PostCategories.AnyAsync(predicate);
+            await _context.PostCategories.AddAsync(postCategory);
+            await _context.SaveChangesAsync();
+            return postCategory;
+        }
+
+        // Merr të gjitha lidhjet për një post
+        public async Task<IEnumerable<PostCategory>> GetCategoriesByPostIdAsync(int postId)
+        {
+            return await _context.PostCategories
+                .Where(pc => pc.PostId == postId)
+                .ToListAsync();
+        }
+
+        // Merr të gjitha lidhjet për një kategori
+        public async Task<IEnumerable<PostCategory>> GetPostsByCategoryIdAsync(int categoryId)
+        {
+            return await _context.PostCategories
+                .Where(pc => pc.CategoryId == categoryId)
+                .ToListAsync();
+        }
+
+        // Fshi lidhjen midis postit dhe kategorisë
+        public async Task DeleteAsync(int postId, int categoryId)
+        {
+            var postCategory = await _context.PostCategories
+                .FirstOrDefaultAsync(pc => pc.PostId == postId && pc.CategoryId == categoryId);
+
+            if (postCategory != null)
+            {
+                _context.PostCategories.Remove(postCategory);
+                await _context.SaveChangesAsync();
+            }
+        }
+
+        // Fshi të gjitha lidhjet për një post
+        public async Task DeleteByPostIdAsync(int postId)
+        {
+            var postCategories = await _context.PostCategories
+                .Where(pc => pc.PostId == postId)
+                .ToListAsync();
+
+            _context.PostCategories.RemoveRange(postCategories);
+            await _context.SaveChangesAsync();
+        }
+
+        // Fshi të gjitha lidhjet për një kategori
+        public async Task DeleteByCategoryIdAsync(int categoryId)
+        {
+            var postCategories = await _context.PostCategories
+                .Where(pc => pc.CategoryId == categoryId)
+                .ToListAsync();
+
+            _context.PostCategories.RemoveRange(postCategories);
+            await _context.SaveChangesAsync();
+        }
+
+        public Task<bool> AnyAsync(Func<object, bool> value)
+        {
+            throw new NotImplementedException();
         }
     }
 }

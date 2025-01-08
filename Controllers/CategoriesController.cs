@@ -136,12 +136,13 @@ namespace BlogApp.Controllers
                     return NotFound("Category not found.");
                 }
 
-                var isLinkedToPosts = await _unitOfWork.PostCategories.AnyAsync(pc => pc.CategoryId == id);
+                /*var isLinkedToPosts = await _unitOfWork.PostCategories.AnyAsync(pc => pc.CategoryId == id);
                 if (isLinkedToPosts)
                 {
                     _logger.LogWarning($"Category with ID {id} cannot be deleted because it is linked to posts.");
                     return BadRequest("This category cannot be deleted because it is linked to posts.");
                 }
+                */
 
                 _unitOfWork.Categories.DeleteAsync(id);
                 await _unitOfWork.CommitAsync();

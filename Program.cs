@@ -1,5 +1,6 @@
 using BlogApp.Data;
 using BlogApp.Interfaces;
+using BlogApp.Repositories;
 using BlogApp.Repository;
 using BlogApp.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -106,6 +107,7 @@ builder.Services.AddIdentity<IdentityUser, IdentityRole>()
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IPostRepository, PostRepository>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<IPostCategoryRepository, PostCategoryRepository>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IValidationService, ValidationService>();
 
