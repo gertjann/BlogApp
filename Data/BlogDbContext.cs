@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 namespace BlogApp.Data
 {
     public class BlogDbContext : DbContext
-   // public class BlogDbContext : IdentityDbContext<User> // Trashëgoni nga IdentityDbContext
 
     {
 
