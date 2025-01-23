@@ -20,7 +20,7 @@ namespace BlogApp.Data
             base.OnModelCreating(modelBuilder);
 
             modelBuilder.Entity<PostCategory>()
-                .HasKey(pc => new { pc.PostId, pc.CategoryId });  // Përcakto çelësin primar si kombinim të PostId dhe CategoryId
+                .HasKey(pc => new { pc.PostId, pc.CategoryId });  
 
             modelBuilder.Entity<Post>()
                 .HasMany(p => p.PostCategories)
