@@ -14,8 +14,8 @@ namespace BlogApp.Interfaces
         Task<ValidationResult> ValidatePostAsync(UserRegisterDto userRegister);
         Task<ValidationResult> ValidatePostCreateAsync(PostCreateDto postDto);
         Task<ValidationResult> ValidatePostUpdateAsync(PostUpdateDto postUpdateDto);
-        Task<ValidationResult> ValidateRegisterAsync(UserRegisterDto registerDto); // Shtuar kjo metodë
-        Task<ValidationResult> ValidateLoginAsync(UserLoginDto loginDto); // Po ashtu edhe validimi për login
+        Task<ValidationResult> ValidateRegisterAsync(UserRegisterDto registerDto); 
+        Task<ValidationResult> ValidateLoginAsync(UserLoginDto loginDto); 
 
     }
 }
